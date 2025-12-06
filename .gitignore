@@ -1,0 +1,12 @@
+# Proxy configuration (may contain sensitive data)
+.proxy-config
+
+# Cluster logs
+cluster-logs/
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.log
