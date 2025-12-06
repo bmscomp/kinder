@@ -1,5 +1,6 @@
 # Proxy configuration (may contain sensitive data)
 .proxy-config
+proxy/proxy.env
 
 # Cluster logs
 cluster-logs/

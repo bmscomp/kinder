@@ -32,26 +32,42 @@ This will install:
 
 ### 2. Configure Proxy (Optional)
 
-If you're behind a corporate proxy, create the proxy configuration:
+If you're behind a corporate proxy, follow these steps:
+
+#### Step 1: Create Proxy Configuration
 
 ```bash
 make configure-proxy
 ```
 
-Then edit `.proxy-config` with your proxy settings:
+This creates `proxy/proxy.env` from the template.
+
+#### Step 2: Edit Proxy Settings
+
+Edit `proxy/proxy.env` with your corporate proxy details:
 
 ```bash
-# Corporate Proxy Configuration
+# Required settings
 HTTP_PROXY=http://proxy.company.com:8080
 HTTPS_PROXY=http://proxy.company.com:8080
 NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# Optional: If authentication is required
+PROXY_USER=your-username
+PROXY_PASS=your-password
 ```
 
-**Important for macOS Docker Desktop users**: Also configure proxy settings in Docker Desktop:
-- Open Docker Desktop
-- Go to Settings > Resources > Proxies
-- Enable manual proxy configuration
-- Enter your proxy details
+#### Step 3: Configure Docker Desktop (macOS)
+
+1. Open Docker Desktop
+2. Go to **Settings** → **Resources** → **Proxies**
+3. Enable **Manual proxy configuration**
+4. Enter:
+   - Web Server (HTTP): `http://proxy.company.com:8080`
+   - Secure Web Server (HTTPS): `http://proxy.company.com:8080`
+5. Click **Apply & Restart**
+
+**Note**: See the [Proxy Configuration Details](#proxy-configuration-details) section below for more information.
 
 ### 3. Create the Cluster
 
@@ -113,7 +129,8 @@ This will:
 
 | Command | Description |
 |---------|-------------|
-| `make configure-proxy` | Create proxy configuration template |
+| `make configure-proxy` | Create proxy configuration from template |
+| `make show-proxy` | Show current proxy configuration |
 | `make load-image IMAGE=name:tag` | Load a Docker image into the cluster |
 | `make install-deps` | Install required dependencies |
 | `make check-deps` | Check if dependencies are installed |
@@ -189,15 +206,70 @@ kind load docker-image myapp:latest --name corporate-cluster
 
 ## Proxy Configuration Details
 
-The deployment script configures proxies at multiple levels:
+The deployment script configures proxies at multiple levels to ensure Kind can pull images behind a corporate proxy:
 
 1. **Host Environment**: Exports `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`
 2. **Docker Daemon**: Requires manual configuration in Docker Desktop on macOS
 3. **Containerd**: Configures proxy for container runtime inside each node
+4. **Kubelet**: Configures proxy for Kubernetes node agent
+5. **Node Environment**: Sets proxy variables in `/etc/environment`
 
 ### Proxy Configuration File Format
 
-The `.proxy-config` file should contain:
+The `proxy/proxy.env` file should contain:
+
+```bash
+# Basic proxy configuration
+HTTP_PROXY=http://proxy.company.com:8080
+HTTPS_PROXY=http://proxy.company.com:8080
+NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# Optional: Proxy authentication
+PROXY_USER=your-username
+PROXY_PASS=your-password
+```
+
+**Note**: 
+- Adjust the `NO_PROXY` list to include your internal network ranges
+- The script automatically constructs authenticated URLs if credentials are provided
+- Passwords are masked in log output for security
+
+### Verify Proxy is Working
+
+After cluster creation, test that images can be pulled through the proxy:
+
+```bash
+# Deploy a test pod
+kubectl run test-nginx --image=nginx:latest --restart=Never
+
+# Wait a moment, then check status
+kubectl get pod test-nginx
+
+# Should show "Running" status
+# If it shows "ImagePullBackOff", see troubleshooting below
+```
+
+Check the pod details:
+
+```bash
+kubectl describe pod test-nginx
+```
+
+Look for events showing successful image pull. Clean up:
+
+```bash
+kubectl delete pod test-nginx
+```
+
+### View Current Proxy Configuration
+
+```bash
+make show-proxy
+```
+
+### Common Proxy Configurations
+
+#### Basic Proxy (No Authentication)
 
 ```bash
 HTTP_PROXY=http://proxy.company.com:8080
@@ -205,7 +277,33 @@ HTTPS_PROXY=http://proxy.company.com:8080
 NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 ```
 
-**Note**: Adjust the `NO_PROXY` list to include your internal network ranges.
+#### Proxy with Authentication
+
+```bash
+HTTP_PROXY=http://proxy.company.com:8080
+HTTPS_PROXY=http://proxy.company.com:8080
+NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+PROXY_USER=john.doe
+PROXY_PASS=SecurePassword123
+```
+
+#### Different HTTP and HTTPS Proxies
+
+```bash
+HTTP_PROXY=http://http-proxy.company.com:8080
+HTTPS_PROXY=http://https-proxy.company.com:8443
+NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+### Proxy Security Best Practices
+
+1. **Never commit `proxy/proxy.env`** - It's in `.gitignore` for security
+2. **Use strong passwords** - If authentication is required
+3. **Rotate credentials** - Change passwords regularly
+4. **Limit access** - Restrict who can read `proxy/proxy.env`
+5. **Consider alternatives** - Use environment variables instead of storing passwords
+
+For additional proxy documentation, see `proxy/README.md`.
 
 ## Troubleshooting
 
@@ -246,10 +344,83 @@ kubectl get pods -n kube-system
 
 If containers can't pull images:
 
-1. Verify `.proxy-config` settings
-2. Check Docker Desktop proxy configuration
-3. Verify `NO_PROXY` includes cluster networks
-4. Check containerd proxy: `make shell-paris` then check `/etc/systemd/system/containerd.service.d/http-proxy.conf`
+#### Check Proxy Configuration in Nodes
+
+```bash
+# Open shell in control-plane node
+make shell-paris
+
+# Check containerd proxy
+cat /etc/systemd/system/containerd.service.d/http-proxy.conf
+
+# Check kubelet proxy
+cat /etc/systemd/system/kubelet.service.d/http-proxy.conf
+
+# Check environment variables
+cat /etc/environment
+
+# Exit node
+exit
+```
+
+#### Verify Docker Desktop Proxy
+
+- Settings → Resources → Proxies
+- Ensure proxy URLs are correct
+- Try toggling off and on, then Apply & Restart
+
+#### Check NO_PROXY Includes Cluster Networks
+
+```
+NO_PROXY should include:
+- localhost,127.0.0.1
+- .local,.svc,.cluster.local
+- 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+- 10.96.0.0/12 (Kubernetes service network)
+- 10.244.0.0/16 (Kubernetes pod network)
+```
+
+#### Test Proxy from Host
+
+Before creating the cluster, test proxy from your Mac:
+
+```bash
+# Source the proxy configuration
+source proxy/proxy.env
+
+# Test HTTP connection
+curl -I http://registry-1.docker.io/v2/
+
+# Test HTTPS connection
+curl -I https://registry-1.docker.io/v2/
+
+# Should return 200 or 401 (authentication required)
+# Should NOT return connection errors
+```
+
+#### Proxy Authentication Issues
+
+If your proxy requires authentication:
+
+1. Ensure `PROXY_USER` and `PROXY_PASS` are set in `proxy/proxy.env`
+2. The script automatically constructs authenticated URLs
+3. Check logs during cluster creation for authentication errors
+4. Passwords are masked in output for security
+
+#### SSL/TLS Certificate Issues
+
+If you see SSL certificate errors:
+
+1. Your proxy might be intercepting SSL traffic
+2. You may need to install your corporate CA certificate
+3. Contact your IT department for the CA certificate
+4. Consider adding `HTTPS_PROXY` with your proxy's certificate
+
+#### Quick Checks
+
+- View current proxy settings: `make show-proxy`
+- Verify `proxy/proxy.env` settings
+- Check Docker Desktop proxy configuration (Settings > Resources > Proxies)
 
 ### Resource Constraints
 
@@ -264,11 +435,14 @@ If nodes are slow or unresponsive:
 ```
 kinder/
 ├── Makefile                           # Cluster management commands
-├── README.md                          # This documentation
-├── .proxy-config                      # Proxy configuration (optional)
+├── README.md                          # This documentation (includes proxy setup)
 ├── .gitignore                         # Git ignore rules
 ├── config/
 │   └── kind-cluster-config.yaml      # Kind cluster configuration
+├── proxy/
+│   ├── proxy.env.example             # Proxy configuration template
+│   ├── proxy.env                     # Your proxy settings (git-ignored)
+│   └── README.md                     # Additional proxy documentation
 └── scripts/
     └── deploy-kind-cluster.sh        # Main deployment script
 ```
@@ -276,9 +450,11 @@ kinder/
 ## Files Description
 
 - **`config/kind-cluster-config.yaml`**: Kind cluster configuration with 3 nodes
-- **`scripts/deploy-kind-cluster.sh`**: Main deployment script with proxy support
+- **`scripts/deploy-kind-cluster.sh`**: Main deployment script with enhanced proxy support
+- **`proxy/proxy.env.example`**: Template for proxy configuration
+- **`proxy/proxy.env`**: Your actual proxy settings (created by `make configure-proxy`)
+- **`proxy/README.md`**: Detailed proxy configuration and troubleshooting guide
 - **`Makefile`**: Convenient commands for cluster management
-- **`.proxy-config`**: Proxy configuration (created by `make configure-proxy`)
 - **`README.md`**: This documentation
 
 ## Customization

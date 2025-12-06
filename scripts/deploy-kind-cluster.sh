@@ -18,7 +18,8 @@ NC='\033[0m' # No Color
 # Configuration
 CLUSTER_NAME="corporate-cluster"
 CONFIG_FILE="config/kind-cluster-config.yaml"
-PROXY_CONFIG_FILE=".proxy-config"
+PROXY_CONFIG_FILE="proxy/proxy.env"
+PROXY_EXAMPLE_FILE="proxy/proxy.env.example"
 
 # Node resource configuration
 NODE_MEMORY="10240m"  # 10GB
@@ -66,16 +67,33 @@ load_proxy_config() {
         print_info "Loading proxy configuration from $PROXY_CONFIG_FILE"
         source "$PROXY_CONFIG_FILE"
         
+        # Handle proxy authentication if provided
+        if [ -n "$PROXY_USER" ] && [ -n "$PROXY_PASS" ]; then
+            print_info "Proxy authentication detected, constructing authenticated URLs..."
+            PROXY_AUTH="${PROXY_USER}:${PROXY_PASS}@"
+            
+            # Reconstruct proxy URLs with authentication
+            if [ -n "$HTTP_PROXY" ]; then
+                HTTP_PROXY=$(echo "$HTTP_PROXY" | sed "s|://|://${PROXY_AUTH}|")
+            fi
+            if [ -n "$HTTPS_PROXY" ]; then
+                HTTPS_PROXY=$(echo "$HTTPS_PROXY" | sed "s|://|://${PROXY_AUTH}|")
+            fi
+        fi
+        
         if [ -n "$HTTP_PROXY" ]; then
             export HTTP_PROXY
             export http_proxy="$HTTP_PROXY"
-            print_info "HTTP_PROXY: $HTTP_PROXY"
+            # Mask password in output
+            DISPLAY_PROXY=$(echo "$HTTP_PROXY" | sed 's|://[^:]*:[^@]*@|://***:***@|')
+            print_info "HTTP_PROXY: $DISPLAY_PROXY"
         fi
         
         if [ -n "$HTTPS_PROXY" ]; then
             export HTTPS_PROXY
             export https_proxy="$HTTPS_PROXY"
-            print_info "HTTPS_PROXY: $HTTPS_PROXY"
+            DISPLAY_PROXY=$(echo "$HTTPS_PROXY" | sed 's|://[^:]*:[^@]*@|://***:***@|')
+            print_info "HTTPS_PROXY: $DISPLAY_PROXY"
         fi
         
         if [ -n "$NO_PROXY" ]; then
@@ -85,10 +103,9 @@ load_proxy_config() {
         fi
     else
         print_warning "No proxy configuration file found at $PROXY_CONFIG_FILE"
-        print_info "To use a proxy, create $PROXY_CONFIG_FILE with the following content:"
-        echo "  HTTP_PROXY=http://proxy.company.com:8080"
-        echo "  HTTPS_PROXY=http://proxy.company.com:8080"
-        echo "  NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local"
+        print_info "To use a proxy, copy and configure the example file:"
+        echo "  cp $PROXY_EXAMPLE_FILE $PROXY_CONFIG_FILE"
+        echo "  Then edit $PROXY_CONFIG_FILE with your proxy settings"
     fi
 }
 
@@ -170,8 +187,26 @@ configure_nodes() {
             [ -n "$NO_PROXY" ] && PROXY_CONF+="Environment=\"NO_PROXY=$NO_PROXY\"\n"
             
             docker exec "$NODE" bash -c "echo -e '$PROXY_CONF' > /etc/systemd/system/containerd.service.d/http-proxy.conf"
+            
+            # Configure kubelet proxy
+            docker exec "$NODE" bash -c "mkdir -p /etc/systemd/system/kubelet.service.d"
+            docker exec "$NODE" bash -c "echo -e '$PROXY_CONF' > /etc/systemd/system/kubelet.service.d/http-proxy.conf"
+            
+            # Set environment variables in the node
+            docker exec "$NODE" bash -c "cat >> /etc/environment << EOF
+HTTP_PROXY=$HTTP_PROXY
+HTTPS_PROXY=$HTTPS_PROXY
+NO_PROXY=$NO_PROXY
+http_proxy=$HTTP_PROXY
+https_proxy=$HTTPS_PROXY
+no_proxy=$NO_PROXY
+EOF"
+            
+            # Reload and restart services
             docker exec "$NODE" systemctl daemon-reload 2>/dev/null || true
             docker exec "$NODE" systemctl restart containerd 2>/dev/null || true
+            
+            print_info "Proxy configured for $NODE ✓"
         fi
     done
     

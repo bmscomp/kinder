@@ -64,19 +64,30 @@ shell-london: ## Open shell in london node (worker)
 	@echo "$(GREEN)Opening shell in london node...$(NC)"
 	@docker exec -it $(CLUSTER_NAME)-worker2 bash
 
-configure-proxy: ## Create proxy configuration file template
-	@if [ ! -f .proxy-config ]; then \
-		echo "$(GREEN)Creating proxy configuration template...$(NC)"; \
-		echo "# Corporate Proxy Configuration" > .proxy-config; \
-		echo "# Uncomment and configure the following lines:" >> .proxy-config; \
-		echo "#HTTP_PROXY=http://proxy.company.com:8080" >> .proxy-config; \
-		echo "#HTTPS_PROXY=http://proxy.company.com:8080" >> .proxy-config; \
-		echo "#NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" >> .proxy-config; \
-		echo "$(GREEN)Proxy configuration template created at .proxy-config$(NC)"; \
-		echo "$(YELLOW)Please edit .proxy-config with your proxy settings before creating the cluster$(NC)"; \
+configure-proxy: ## Create proxy configuration file from template
+	@if [ ! -f proxy/proxy.env ]; then \
+		echo "$(GREEN)Creating proxy configuration from template...$(NC)"; \
+		cp proxy/proxy.env.example proxy/proxy.env; \
+		echo "$(GREEN)Proxy configuration created at proxy/proxy.env$(NC)"; \
+		echo "$(YELLOW)Please edit proxy/proxy.env with your proxy settings before creating the cluster$(NC)"; \
+		echo ""; \
+		echo "Example configuration:"; \
+		echo "  HTTP_PROXY=http://proxy.company.com:8080"; \
+		echo "  HTTPS_PROXY=http://proxy.company.com:8080"; \
+		echo "  NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local"; \
 	else \
-		echo "$(YELLOW).proxy-config already exists$(NC)"; \
-		cat .proxy-config; \
+		echo "$(YELLOW)proxy/proxy.env already exists$(NC)"; \
+		echo "Current configuration:"; \
+		grep -v "^#" proxy/proxy.env | grep -v "^$$" || echo "  (empty or all commented)"; \
+	fi
+
+show-proxy: ## Show current proxy configuration
+	@if [ -f proxy/proxy.env ]; then \
+		echo "$(GREEN)Current proxy configuration:$(NC)"; \
+		cat proxy/proxy.env; \
+	else \
+		echo "$(YELLOW)No proxy configuration found at proxy/proxy.env$(NC)"; \
+		echo "Run 'make configure-proxy' to create one"; \
 	fi
 
 logs-paris: ## Show logs from paris node
