@@ -551,4 +551,3 @@ kubectl run test --image=nginx --restart=Never
 - [Docker Proxy Configuration](https://docs.docker.com/network/proxy/)
 - [Kind Proxy Support](https://kind.sigs.k8s.io/docs/user/configuration/#proxy)
 - Main proxy documentation: [`proxy/README.md`](proxy/README.md)
-- CNTLM setup: [`proxy/CNTLM_SETUP.md`](proxy/CNTLM_SETUP.md)

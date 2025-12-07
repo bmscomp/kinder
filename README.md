@@ -44,7 +44,7 @@ This creates `proxy/proxy.env` from the template.
 
 #### Step 2: Edit Proxy Settings
 
-**Option A: Direct Proxy (Basic/Digest Auth)**
+**Option A: Direct Proxy (No Auth / Basic Auth / Digest Auth)**
 
 Edit `proxy/proxy.env` with your corporate proxy details:
 
@@ -54,23 +54,26 @@ HTTP_PROXY=http://proxy.company.com:8080
 HTTPS_PROXY=http://proxy.company.com:8080
 NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 
-# Optional: If authentication is required
+# Optional: Only if authentication is required
+# Leave these commented out if your proxy doesn't require auth
 PROXY_USER=your-username
 PROXY_PASS=your-password
 ```
 
-**Option B: CNTLM (NTLM Authentication)**
+> **Note**: If your corporate proxy doesn't require authentication, just omit `PROXY_USER` and `PROXY_PASS`.
 
-For corporate proxies requiring NTLM authentication:
+**Option B: Localhost Proxy**
+
+If your proxy runs on your host machine (e.g., `localhost:9000`):
 
 ```bash
-# Point to CNTLM running on Docker bridge
-HTTP_PROXY=http://172.17.0.1:3128
-HTTPS_PROXY=http://172.17.0.1:3128
-NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+# Use host.docker.internal to reach host from Kind containers
+HTTP_PROXY=http://host.docker.internal:9000
+HTTPS_PROXY=http://host.docker.internal:9000
+NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,172.18.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,10.96.0.0/12,10.244.0.0/16
 ```
 
-> **📖 CNTLM Setup**: See [`proxy/CNTLM_SETUP.md`](proxy/CNTLM_SETUP.md) for complete CNTLM installation and configuration guide.
+> **⚠️ Important**: Kind containers cannot reach `localhost` directly. Always use `host.docker.internal`.
 
 #### Step 3: Configure Docker Desktop (macOS)
 
@@ -642,8 +645,7 @@ kinder/
 ├── proxy/
 │   ├── proxy.env.example             # Proxy configuration template
 │   ├── proxy.env                     # Your proxy settings (git-ignored)
-│   ├── README.md                     # Proxy documentation
-│   └── CNTLM_SETUP.md                # CNTLM setup guide for NTLM proxies
+│   └── README.md                     # Proxy documentation
 └── scripts/
     ├── deploy-kind-cluster.sh        # Main cluster deployment script
     ├── deploy-dashboard.sh           # Dashboard deployment script
@@ -656,10 +658,9 @@ kinder/
 - **`config/kind-cluster-config.yaml`**: Kind cluster configuration with 3 nodes
 - **`scripts/deploy-kind-cluster.sh`**: Main deployment script with enhanced proxy support
 - **`scripts/deploy-dashboard.sh`**: Kubernetes Dashboard deployment script
-- **`proxy/proxy.env.example`**: Template for proxy configuration (includes CNTLM example)
+- **`proxy/proxy.env.example`**: Template for proxy configuration
 - **`proxy/proxy.env`**: Your actual proxy settings (created by `make configure-proxy`)
 - **`proxy/README.md`**: Detailed proxy configuration and troubleshooting guide
-- **`proxy/CNTLM_SETUP.md`**: Complete CNTLM setup guide for NTLM authentication proxies
 - **`dashboard-token.txt`**: Dashboard access token (git-ignored, created by dashboard deployment)
 - **`Makefile`**: Convenient commands for cluster management
 - **`README.md`**: Main documentation

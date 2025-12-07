@@ -4,75 +4,81 @@ This directory contains proxy configuration files for running Kind behind a corp
 
 ## Setup
 
-### Option 1: Direct Proxy (Basic/Digest Authentication)
+### Option 1: Direct Proxy (No Authentication or Basic Authentication)
 
-1. Copy the example configuration:
-   ```bash
-   cp proxy/proxy.env.example proxy/proxy.env
-   ```
+If your corporate proxy doesn't require authentication or uses basic authentication:
 
-2. Edit `proxy/proxy.env` with your corporate proxy settings:
-   ```bash
-   HTTP_PROXY=http://your-proxy.company.com:8080
-   HTTPS_PROXY=http://your-proxy.company.com:8080
-   NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-   ```
+**For proxies WITHOUT authentication:**
 
-3. If your proxy requires authentication, add:
-   ```bash
-   PROXY_USER=your-username
-   PROXY_PASS=your-password
-   ```
-
-### Option 2: CNTLM Gateway Mode (NTLM Authentication)
-
-**For corporate proxies requiring NTLM authentication**, use CNTLM:
-
-1. **Install and configure CNTLM** (see [`CNTLM_SETUP.md`](CNTLM_SETUP.md) for detailed guide)
-
-2. **Find your Docker bridge IP**:
-   ```bash
-   # On macOS
-   docker network inspect bridge | grep Gateway
-   
-   # On Linux
-   ip addr show docker0 | grep "inet "
-   
-   # Alternative (works on both)
-   docker run --rm alpine ip route | grep default | awk '{print $3}'
-   
-   # Usually: 172.17.0.1
-   ```
-
-3. **Configure proxy.env** to point to CNTLM:
+1. **Configure proxy.env**:
    ```bash
    cp proxy/proxy.env.example proxy/proxy.env
    vi proxy/proxy.env
    ```
-
-   Set these values:
+   
+   Set these values (no username/password needed):
    ```bash
-   HTTP_PROXY=http://172.17.0.1:3128
-   HTTPS_PROXY=http://172.17.0.1:3128
-   NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+   HTTP_PROXY=http://proxy.company.com:8080
+   HTTPS_PROXY=http://proxy.company.com:8080
+   NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
    ```
 
-4. **Export environment variables**:
+**For proxies WITH basic authentication:**
+
+1. **Configure proxy.env**:
    ```bash
-   export HTTP_PROXY=http://172.17.0.1:3128
-   export HTTPS_PROXY=$HTTP_PROXY
-   export NO_PROXY="localhost,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-   export http_proxy=$HTTP_PROXY
-   export https_proxy=$HTTPS_PROXY
-   export no_proxy=$NO_PROXY
+   cp proxy/proxy.env.example proxy/proxy.env
+   vi proxy/proxy.env
+   ```
+   
+   Set these values (including credentials):
+   ```bash
+   HTTP_PROXY=http://proxy.company.com:8080
+   HTTPS_PROXY=http://proxy.company.com:8080
+   NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+   
+   # Add authentication
+   PROXY_USER=your-username
+   PROXY_PASS=your-password
    ```
 
-5. **Create cluster**:
+2. **Create the cluster**:
    ```bash
    make create-cluster
    ```
+   
+   The script will automatically construct authenticated URLs like:
+   `http://username:password@proxy.company.com:8080`
 
-> **📖 Full CNTLM Guide**: See [`CNTLM_SETUP.md`](CNTLM_SETUP.md) for complete setup instructions
+### Option 2: Proxy Running on Host Localhost
+
+**If your proxy runs on your host machine** (e.g., `http://localhost:9000`):
+
+> ⚠️ **Important**: Kind containers cannot reach `localhost` directly. You must use `host.docker.internal`.
+
+1. **Configure proxy.env**:
+   ```bash
+   cp proxy/proxy.env.example proxy/proxy.env
+   vi proxy/proxy.env
+   ```
+   
+   Set these values (replace `9000` with your proxy port):
+   ```bash
+   HTTP_PROXY=http://host.docker.internal:9000
+   HTTPS_PROXY=http://host.docker.internal:9000
+   NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,172.18.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,10.96.0.0/12,10.244.0.0/16
+   ```
+
+2. **Verify your proxy is accessible**:
+   ```bash
+   # Test from a Kind container
+   docker exec celine-control-plane curl -v -x http://host.docker.internal:9000 http://www.google.com
+   ```
+
+3. **Create the cluster**:
+   ```bash
+   make create-cluster
+   ```
 
 ## What Gets Configured
 
@@ -174,67 +180,26 @@ If you encounter SSL certificate issues:
 - You may need to add your corporate CA certificate
 - Contact your IT department for the CA certificate
 
-### CNTLM Issues
+### Localhost Proxy Issues
 
-If using CNTLM and images still won't pull:
+If your localhost proxy isn't working:
 
-1. **Verify CNTLM is running**:
+1. **Verify proxy is running**:
    ```bash
-   # macOS
-   brew services list | grep cntlm
-   
-   # Linux
-   sudo systemctl status cntlm
+   lsof -i -P | grep LISTEN | grep YOUR_PORT
    ```
 
-2. **Check CNTLM is listening**:
+2. **Test from host**:
    ```bash
-   netstat -an | grep 3128
-   # Should show: tcp4  0  0  *.3128  *.*  LISTEN
+   curl -v -x http://localhost:YOUR_PORT http://www.google.com
    ```
 
-3. **Test connectivity from container**:
+3. **Test from Kind container**:
    ```bash
-   docker run --rm alpine ping -c 2 172.17.0.1
-   docker run --rm -e http_proxy=http://172.17.0.1:3128 alpine wget -O- http://www.google.com
+   docker exec celine-control-plane curl -v -x http://host.docker.internal:YOUR_PORT http://www.google.com
    ```
 
-4. **Verify Docker bridge IP**:
-   ```bash
-   # On macOS
-   docker network inspect bridge | grep Gateway
-   
-   # On Linux
-   ip addr show docker0 | grep "inet "
-   
-   # Alternative (works on both)
-   docker run --rm alpine ip route | grep default | awk '{print $3}'
-   
-   # Update proxy.env if IP is different from 172.17.0.1
-   ```
-
-5. **Check CNTLM logs**:
-   ```bash
-   # macOS
-   tail -f /usr/local/var/log/cntlm.log
-   
-   # Linux
-   sudo journalctl -u cntlm -f
-   ```
-
-6. **Ensure Gateway mode is enabled** in `/etc/cntlm.conf`:
-   ```ini
-   Gateway    yes
-   Listen     3128
-   ```
-
-7. **Verify NO_PROXY includes Docker bridge**:
-   ```bash
-   # Must include 172.17.* to avoid proxy loops
-   NO_PROXY=localhost,127.0.0.*,172.17.*,...
-   ```
-
-For detailed CNTLM troubleshooting, see [`CNTLM_SETUP.md`](CNTLM_SETUP.md).
+4. **Ensure proxy listens on all interfaces** (0.0.0.0), not just localhost (127.0.0.1)
 
 ## Security Notes
 
@@ -245,7 +210,6 @@ For detailed CNTLM troubleshooting, see [`CNTLM_SETUP.md`](CNTLM_SETUP.md).
 
 ## Files
 
-- `proxy.env.example` - Template configuration file (includes CNTLM example)
+- `proxy.env.example` - Template configuration file
 - `proxy.env` - Your actual configuration (git-ignored)
 - `README.md` - This documentation
-- `CNTLM_SETUP.md` - Complete CNTLM setup guide for NTLM proxies
