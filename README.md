@@ -4,7 +4,7 @@ Automated deployment of a 3-node Kind Kubernetes cluster with configurable corpo
 
 ## Cluster Configuration
 
-- **Cluster Name**: corporate-cluster
+- **Cluster Name**: celine
 - **Nodes**: 3 nodes with custom names
   - **paris** (control-plane) - 4 CPUs, 10GB RAM
   - **berlin** (worker) - 4 CPUs, 10GB RAM
@@ -44,6 +44,8 @@ This creates `proxy/proxy.env` from the template.
 
 #### Step 2: Edit Proxy Settings
 
+**Option A: Direct Proxy (Basic/Digest Auth)**
+
 Edit `proxy/proxy.env` with your corporate proxy details:
 
 ```bash
@@ -56,6 +58,19 @@ NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12
 PROXY_USER=your-username
 PROXY_PASS=your-password
 ```
+
+**Option B: CNTLM (NTLM Authentication)**
+
+For corporate proxies requiring NTLM authentication:
+
+```bash
+# Point to CNTLM running on Docker bridge
+HTTP_PROXY=http://172.17.0.1:3128
+HTTPS_PROXY=http://172.17.0.1:3128
+NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+> **📖 CNTLM Setup**: See [`proxy/CNTLM_SETUP.md`](proxy/CNTLM_SETUP.md) for complete CNTLM installation and configuration guide.
 
 #### Step 3: Configure Docker Desktop (macOS)
 
@@ -83,6 +98,28 @@ This will:
 - Apply proxy settings to containerd (if configured)
 - Label nodes with city names (paris, berlin, london)
 - Verify the cluster is ready
+
+## Testing with Local Proxy
+
+To test proxy configuration without a real corporate proxy, use the built-in test proxy:
+
+```bash
+# Start local test proxy
+make test-proxy
+
+# Create cluster (automatically uses test proxy)
+make create-cluster
+
+# Test image pull
+kubectl run test-nginx --image=nginx:latest --restart=Never
+kubectl get pod test-nginx
+
+# Cleanup
+kubectl delete pod test-nginx
+make cleanup-test-proxy
+```
+
+> **📖 Full Testing Guide**: See [`TESTING_PROXY.md`](TESTING_PROXY.md) for comprehensive testing instructions.
 
 ## Makefile Commands
 
@@ -131,9 +168,30 @@ This will:
 |---------|-------------|
 | `make configure-proxy` | Create proxy configuration from template |
 | `make show-proxy` | Show current proxy configuration |
+| `make configure-containerd-proxy` | Configure containerd proxy on all nodes |
+| `make check-containerd-proxy` | Check containerd proxy configuration on all nodes |
+| `make restart-containerd` | Restart containerd service on all nodes |
 | `make load-image IMAGE=name:tag` | Load a Docker image into the cluster |
 | `make install-deps` | Install required dependencies |
 | `make check-deps` | Check if dependencies are installed |
+
+### Kubernetes Dashboard
+
+| Command | Description |
+|---------|-------------|
+| `make deploy-dashboard` | Deploy Kubernetes Dashboard to the cluster |
+| `make delete-dashboard` | Delete Kubernetes Dashboard from the cluster |
+| `make dashboard-proxy` | Start kubectl proxy for dashboard access |
+| `make dashboard-token` | Display the dashboard access token |
+| `make dashboard-url` | Display the dashboard URL |
+
+### Testing & Development
+
+| Command | Description |
+|---------|-------------|
+| `make test-proxy` | Start local test proxy (no auth) for development |
+| `make test-proxy-auth` | Start local test proxy with authentication |
+| `make cleanup-test-proxy` | Stop and remove test proxy |
 
 ## Manual Usage
 
@@ -162,9 +220,9 @@ kubectl cluster-info
 ```
 
 Expected output should show 3 nodes:
-- `corporate-cluster-control-plane` (paris)
-- `corporate-cluster-worker` (berlin)
-- `corporate-cluster-worker2` (london)
+- `celine-control-plane` (paris)
+- `celine-worker` (berlin)
+- `celine-worker2` (london)
 
 ## Working with the Cluster
 
@@ -201,8 +259,77 @@ docker build -t myapp:latest .
 make load-image IMAGE=myapp:latest
 
 # Or directly:
-kind load docker-image myapp:latest --name corporate-cluster
+kind load docker-image myapp:latest --name celine
 ```
+
+### Using Kubernetes Dashboard
+
+Deploy and access the Kubernetes Dashboard for a web-based UI.
+
+> **Quick Start**: See [`DASHBOARD_QUICKSTART.md`](DASHBOARD_QUICKSTART.md) for a 3-minute setup guide.
+> 
+> **Full Guide**: See [`DASHBOARD_GUIDE.md`](DASHBOARD_GUIDE.md) for comprehensive documentation.
+
+#### Deploy Dashboard
+
+```bash
+make deploy-dashboard
+```
+
+This will:
+- Deploy Kubernetes Dashboard v2.7.0
+- Create an admin service account with cluster-admin privileges
+- Generate and save an access token to `dashboard-token.txt`
+
+#### Access Dashboard
+
+**Step 1: Start the proxy**
+
+```bash
+make dashboard-proxy
+```
+
+Keep this terminal running.
+
+**Step 2: Open the dashboard in your browser**
+
+```
+http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+```
+
+Or get the URL with:
+```bash
+make dashboard-url
+```
+
+**Step 3: Login with token**
+
+Get your access token:
+```bash
+make dashboard-token
+```
+
+Copy the token and paste it into the dashboard login page.
+
+#### Dashboard Management
+
+```bash
+# View the access token
+make dashboard-token
+
+# Get the dashboard URL
+make dashboard-url
+
+# Delete the dashboard
+make delete-dashboard
+```
+
+**Note**: The dashboard provides a visual interface to:
+- View cluster resources (pods, deployments, services)
+- Monitor resource usage
+- View logs and events
+- Execute commands in containers
+- Manage workloads
 
 ## Proxy Configuration Details
 
@@ -346,6 +473,15 @@ If containers can't pull images:
 
 #### Check Proxy Configuration in Nodes
 
+You can check the proxy configuration on all nodes at once:
+
+```bash
+# Check containerd proxy configuration on all nodes
+make check-containerd-proxy
+```
+
+Or manually check a specific node:
+
 ```bash
 # Open shell in control-plane node
 make shell-paris
@@ -362,6 +498,26 @@ cat /etc/environment
 # Exit node
 exit
 ```
+
+#### Reconfigure Containerd Proxy After Cluster Creation
+
+If you need to update proxy settings after the cluster is already running:
+
+```bash
+# 1. Update your proxy configuration
+vi proxy/proxy.env
+
+# 2. Apply the new configuration to all nodes
+make configure-containerd-proxy
+
+# 3. Verify the configuration was applied
+make check-containerd-proxy
+```
+
+This is useful when:
+- Your proxy credentials change
+- Your proxy URL changes
+- You need to add or modify NO_PROXY entries
 
 #### Verify Docker Desktop Proxy
 
@@ -435,27 +591,44 @@ If nodes are slow or unresponsive:
 ```
 kinder/
 ├── Makefile                           # Cluster management commands
-├── README.md                          # This documentation (includes proxy setup)
+├── README.md                          # Main documentation
+├── DASHBOARD_QUICKSTART.md            # Dashboard 3-minute setup guide
+├── DASHBOARD_GUIDE.md                 # Kubernetes Dashboard full guide
+├── CONTAINERD_PROXY_USAGE.md          # Containerd proxy configuration guide
+├── TESTING_PROXY.md                   # Test proxy setup and usage guide
 ├── .gitignore                         # Git ignore rules
 ├── config/
 │   └── kind-cluster-config.yaml      # Kind cluster configuration
 ├── proxy/
 │   ├── proxy.env.example             # Proxy configuration template
 │   ├── proxy.env                     # Your proxy settings (git-ignored)
-│   └── README.md                     # Additional proxy documentation
+│   ├── README.md                     # Proxy documentation
+│   └── CNTLM_SETUP.md                # CNTLM setup guide for NTLM proxies
 └── scripts/
-    └── deploy-kind-cluster.sh        # Main deployment script
+    ├── deploy-kind-cluster.sh        # Main cluster deployment script
+    ├── deploy-dashboard.sh           # Dashboard deployment script
+    ├── setup-test-proxy.sh           # Setup local test proxy
+    └── cleanup-test-proxy.sh         # Cleanup test proxy
 ```
 
 ## Files Description
 
 - **`config/kind-cluster-config.yaml`**: Kind cluster configuration with 3 nodes
 - **`scripts/deploy-kind-cluster.sh`**: Main deployment script with enhanced proxy support
-- **`proxy/proxy.env.example`**: Template for proxy configuration
+- **`scripts/deploy-dashboard.sh`**: Kubernetes Dashboard deployment script
+- **`proxy/proxy.env.example`**: Template for proxy configuration (includes CNTLM example)
 - **`proxy/proxy.env`**: Your actual proxy settings (created by `make configure-proxy`)
 - **`proxy/README.md`**: Detailed proxy configuration and troubleshooting guide
+- **`proxy/CNTLM_SETUP.md`**: Complete CNTLM setup guide for NTLM authentication proxies
+- **`dashboard-token.txt`**: Dashboard access token (git-ignored, created by dashboard deployment)
 - **`Makefile`**: Convenient commands for cluster management
-- **`README.md`**: This documentation
+- **`README.md`**: Main documentation
+- **`DASHBOARD_QUICKSTART.md`**: Quick 3-minute dashboard setup guide
+- **`DASHBOARD_GUIDE.md`**: Comprehensive Kubernetes Dashboard guide
+- **`CONTAINERD_PROXY_USAGE.md`**: Containerd proxy configuration reference
+- **`TESTING_PROXY.md`**: Complete guide for testing with local Squid proxy
+- **`scripts/setup-test-proxy.sh`**: Script to start local test proxy (Squid in Docker)
+- **`scripts/cleanup-test-proxy.sh`**: Script to cleanup test proxy
 
 ## Customization
 

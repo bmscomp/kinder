@@ -16,7 +16,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-CLUSTER_NAME="corporate-cluster"
+CLUSTER_NAME="celine"
 CONFIG_FILE="config/kind-cluster-config.yaml"
 PROXY_CONFIG_FILE="proxy/proxy.env"
 PROXY_EXAMPLE_FILE="proxy/proxy.env.example"
@@ -146,9 +146,6 @@ create_cluster() {
     
     # Create the cluster
     print_info "Creating cluster with configuration from $CONFIG_FILE..."
-    
-    # Set Docker resource limits via environment variables
-    export KIND_EXPERIMENTAL_DOCKER_NETWORK="bridge"
     
     # Create cluster
     kind create cluster --config "$CONFIG_FILE" --name "$CLUSTER_NAME"

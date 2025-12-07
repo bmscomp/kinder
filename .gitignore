@@ -2,6 +2,12 @@
 .proxy-config
 proxy/proxy.env
 
+# Dashboard token (sensitive)
+dashboard-token.txt
+
+# Test proxy configuration
+test-proxy/
+
 # Cluster logs
 cluster-logs/
 

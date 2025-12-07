@@ -1,7 +1,7 @@
-.PHONY: help create-cluster delete-cluster status get-nodes get-pods shell-paris shell-berlin shell-london configure-proxy clean
+.PHONY: help create-cluster delete-cluster status get-nodes get-pods shell-paris shell-berlin shell-london configure-proxy clean configure-containerd-proxy check-containerd-proxy restart-containerd deploy-dashboard delete-dashboard dashboard-proxy dashboard-token dashboard-url test-proxy test-proxy-auth cleanup-test-proxy
 
 # Default cluster name
-CLUSTER_NAME := corporate-cluster
+CLUSTER_NAME := celine
 
 # Color output
 GREEN  := \033[0;32m
@@ -90,6 +90,64 @@ show-proxy: ## Show current proxy configuration
 		echo "Run 'make configure-proxy' to create one"; \
 	fi
 
+configure-containerd-proxy: ## Configure containerd with proxy settings on all nodes
+	@if [ ! -f proxy/proxy.env ]; then \
+		echo "$(YELLOW)No proxy configuration found at proxy/proxy.env$(NC)"; \
+		echo "Run 'make configure-proxy' first to create proxy configuration"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)Configuring containerd proxy on all cluster nodes...$(NC)"
+	@. proxy/proxy.env; \
+	if [ -n "$$PROXY_USER" ] && [ -n "$$PROXY_PASS" ]; then \
+		PROXY_AUTH="$$PROXY_USER:$$PROXY_PASS@"; \
+		HTTP_PROXY=$$(echo "$$HTTP_PROXY" | sed "s|://|://$$PROXY_AUTH|"); \
+		HTTPS_PROXY=$$(echo "$$HTTPS_PROXY" | sed "s|://|://$$PROXY_AUTH|"); \
+	fi; \
+	PROXY_CONF="[Service]\n"; \
+	[ -n "$$HTTP_PROXY" ] && PROXY_CONF+="Environment=\"HTTP_PROXY=$$HTTP_PROXY\"\n"; \
+	[ -n "$$HTTPS_PROXY" ] && PROXY_CONF+="Environment=\"HTTPS_PROXY=$$HTTPS_PROXY\"\n"; \
+	[ -n "$$NO_PROXY" ] && PROXY_CONF+="Environment=\"NO_PROXY=$$NO_PROXY\"\n"; \
+	for NODE in $(CLUSTER_NAME)-control-plane $(CLUSTER_NAME)-worker $(CLUSTER_NAME)-worker2; do \
+		echo "$(GREEN)Configuring $$NODE...$(NC)"; \
+		docker exec $$NODE bash -c "mkdir -p /etc/systemd/system/containerd.service.d"; \
+		docker exec $$NODE bash -c "echo -e '$$PROXY_CONF' > /etc/systemd/system/containerd.service.d/http-proxy.conf"; \
+		docker exec $$NODE bash -c "mkdir -p /etc/systemd/system/kubelet.service.d"; \
+		docker exec $$NODE bash -c "echo -e '$$PROXY_CONF' > /etc/systemd/system/kubelet.service.d/http-proxy.conf"; \
+		docker exec $$NODE bash -c "cat >> /etc/environment << EOF\nHTTP_PROXY=$$HTTP_PROXY\nHTTPS_PROXY=$$HTTPS_PROXY\nNO_PROXY=$$NO_PROXY\nhttp_proxy=$$HTTP_PROXY\nhttps_proxy=$$HTTPS_PROXY\nno_proxy=$$NO_PROXY\nEOF" 2>/dev/null || true; \
+		docker exec $$NODE systemctl daemon-reload 2>/dev/null || true; \
+		docker exec $$NODE systemctl restart containerd 2>/dev/null || true; \
+		echo "$(GREEN)✓ $$NODE configured$(NC)"; \
+	done
+	@echo "$(GREEN)Containerd proxy configuration completed for all nodes$(NC)"
+
+check-containerd-proxy: ## Check containerd proxy configuration on all nodes
+	@echo "$(GREEN)Checking containerd proxy configuration on all nodes...$(NC)"
+	@echo ""
+	@for NODE in $(CLUSTER_NAME)-control-plane $(CLUSTER_NAME)-worker $(CLUSTER_NAME)-worker2; do \
+		echo "$(GREEN)=== $$NODE ===$(NC)"; \
+		echo "$(YELLOW)Containerd proxy config:$(NC)"; \
+		docker exec $$NODE cat /etc/systemd/system/containerd.service.d/http-proxy.conf 2>/dev/null || echo "  No proxy config found"; \
+		echo ""; \
+		echo "$(YELLOW)Kubelet proxy config:$(NC)"; \
+		docker exec $$NODE cat /etc/systemd/system/kubelet.service.d/http-proxy.conf 2>/dev/null || echo "  No proxy config found"; \
+		echo ""; \
+		echo "$(YELLOW)Environment variables:$(NC)"; \
+		docker exec $$NODE bash -c "grep -E '(HTTP_PROXY|HTTPS_PROXY|NO_PROXY)' /etc/environment 2>/dev/null" || echo "  No proxy environment variables found"; \
+		echo ""; \
+		echo "---"; \
+		echo ""; \
+	done
+
+restart-containerd: ## Restart containerd service on all nodes
+	@echo "$(GREEN)Restarting containerd on all cluster nodes...$(NC)"
+	@for NODE in $(CLUSTER_NAME)-control-plane $(CLUSTER_NAME)-worker $(CLUSTER_NAME)-worker2; do \
+		echo "$(GREEN)Restarting containerd on $$NODE...$(NC)"; \
+		docker exec $$NODE systemctl daemon-reload 2>/dev/null || true; \
+		docker exec $$NODE systemctl restart containerd 2>/dev/null || true; \
+		echo "$(GREEN)✓ $$NODE containerd restarted$(NC)"; \
+	done
+	@echo "$(GREEN)Containerd restart completed for all nodes$(NC)"
+
 logs-paris: ## Show logs from paris node
 	@echo "$(GREEN)Logs from paris node:$(NC)"
 	@docker logs $(CLUSTER_NAME)-control-plane
@@ -153,3 +211,54 @@ check-deps: ## Check if required dependencies are installed
 	@command -v kind &> /dev/null && echo "✓ kind installed" || echo "✗ kind not installed"
 	@command -v kubectl &> /dev/null && echo "✓ kubectl installed" || echo "✗ kubectl not installed"
 	@docker info &> /dev/null && echo "✓ Docker daemon running" || echo "✗ Docker daemon not running"
+
+deploy-dashboard: ## Deploy Kubernetes Dashboard to the cluster
+	@echo "$(GREEN)Deploying Kubernetes Dashboard...$(NC)"
+	@./scripts/deploy-dashboard.sh
+
+delete-dashboard: ## Delete Kubernetes Dashboard from the cluster
+	@echo "$(YELLOW)Deleting Kubernetes Dashboard...$(NC)"
+	@kubectl delete namespace kubernetes-dashboard --ignore-not-found=true
+	@kubectl delete clusterrolebinding admin-user --ignore-not-found=true
+	@rm -f dashboard-token.txt
+	@echo "$(GREEN)Dashboard deleted successfully$(NC)"
+
+dashboard-proxy: ## Start kubectl proxy for dashboard access
+	@echo "$(GREEN)Starting kubectl proxy for dashboard access...$(NC)"
+	@echo "$(YELLOW)Dashboard will be available at:$(NC)"
+	@echo "http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/"
+	@echo ""
+	@echo "$(YELLOW)Press Ctrl+C to stop the proxy$(NC)"
+	@echo ""
+	@kubectl proxy
+
+dashboard-token: ## Display the dashboard access token
+	@if [ -f dashboard-token.txt ]; then \
+		echo "$(GREEN)Dashboard Access Token:$(NC)"; \
+		echo "========================================"; \
+		cat dashboard-token.txt; \
+		echo "========================================"; \
+	else \
+		echo "$(YELLOW)Token file not found. Retrieving from cluster...$(NC)"; \
+		kubectl get secret admin-user-token -n kubernetes-dashboard -o jsonpath='{.data.token}' | base64 --decode; \
+		echo ""; \
+	fi
+
+dashboard-url: ## Display the dashboard URL
+	@echo "$(GREEN)Kubernetes Dashboard URL:$(NC)"
+	@echo "http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/"
+	@echo ""
+	@echo "$(YELLOW)Make sure kubectl proxy is running:$(NC)"
+	@echo "  make dashboard-proxy"
+
+test-proxy: ## Start test proxy (no authentication) for development
+	@echo "$(GREEN)Starting test proxy (no auth)...$(NC)"
+	@./scripts/setup-test-proxy.sh
+
+test-proxy-auth: ## Start test proxy with authentication for development
+	@echo "$(GREEN)Starting test proxy with authentication...$(NC)"
+	@./scripts/setup-test-proxy.sh --auth
+
+cleanup-test-proxy: ## Stop and remove test proxy
+	@echo "$(GREEN)Cleaning up test proxy...$(NC)"
+	@./scripts/cleanup-test-proxy.sh
