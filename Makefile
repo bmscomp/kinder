@@ -1,4 +1,4 @@
-.PHONY: help create-cluster delete-cluster status get-nodes get-pods shell-paris shell-berlin shell-london configure-proxy clean configure-containerd-proxy check-containerd-proxy restart-containerd deploy-dashboard delete-dashboard dashboard-proxy dashboard-token dashboard-url test-proxy test-proxy-auth cleanup-test-proxy
+.PHONY: help create-cluster delete-cluster status get-nodes get-pods shell-paris shell-berlin shell-london configure-proxy clean configure-containerd-proxy check-containerd-proxy restart-containerd deploy-dashboard delete-dashboard dashboard-proxy dashboard-token dashboard-url test-proxy test-proxy-auth cleanup-test-proxy set-context
 
 # Default cluster name
 CLUSTER_NAME := celine
@@ -38,6 +38,20 @@ status: ## Show cluster status
 		echo ""; \
 		echo "$(GREEN)Cluster Info:$(NC)"; \
 		kubectl cluster-info; \
+	fi
+
+set-context: ## Set kubectl context to the Kind cluster
+	@echo "$(GREEN)Setting kubectl context to $(CLUSTER_NAME)...$(NC)"
+	@if kind get clusters 2>/dev/null | grep -q "^$(CLUSTER_NAME)$$"; then \
+		kubectl config use-context kind-$(CLUSTER_NAME); \
+		echo "$(GREEN)Context set to kind-$(CLUSTER_NAME) ✓$(NC)"; \
+		echo ""; \
+		echo "$(GREEN)Current context:$(NC)"; \
+		kubectl config current-context; \
+	else \
+		echo "$(YELLOW)Cluster $(CLUSTER_NAME) does not exist.$(NC)"; \
+		echo "Create it first with: make create-cluster"; \
+		exit 1; \
 	fi
 
 get-nodes: ## List all nodes with labels

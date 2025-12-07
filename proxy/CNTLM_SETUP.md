@@ -60,14 +60,24 @@ sudo dnf install cntlm
 ### Step 1: Find Your Docker Bridge IP
 
 ```bash
-# On macOS/Linux
+# On macOS
+docker network inspect bridge | grep Gateway
+
+# On Linux
 ip addr show docker0 | grep "inet "
 
 # Expected output (your IP may vary):
-# inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+# macOS: "Gateway": "172.17.0.1"
+# Linux: inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
 ```
 
 **Note**: The Docker bridge IP is usually `172.17.0.1`. This is the IP where CNTLM will listen.
+
+**Alternative method (works on both macOS and Linux):**
+```bash
+docker run --rm alpine ip route | grep default | awk '{print $3}'
+# Output: 172.17.0.1
+```
 
 ### Step 2: Generate CNTLM Password Hash
 
@@ -351,7 +361,14 @@ cntlm -H -u YOUR_USERNAME -d YOUR_DOMAIN
 
 **Verify Docker bridge IP**:
 ```bash
+# On macOS
+docker network inspect bridge | grep Gateway
+
+# On Linux
 ip addr show docker0 | grep "inet "
+
+# Alternative (works on both)
+docker run --rm alpine ip route | grep default | awk '{print $3}'
 ```
 
 **Check firewall** (Linux):

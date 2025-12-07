@@ -132,6 +132,7 @@ make cleanup-test-proxy
 | `make delete-cluster` | Delete the Kind cluster |
 | `make restart-cluster` | Delete and recreate the cluster |
 | `make status` | Show cluster status and info |
+| `make set-context` | Set kubectl context to the Kind cluster |
 | `make clean` | Clean up cluster and generated files |
 
 ### Cluster Information
@@ -453,6 +454,45 @@ Error: failed to create cluster
 2. Delete existing cluster: `make delete-cluster`
 3. Check Docker proxy settings if behind a proxy
 4. Review logs: `docker logs <container-name>`
+
+### Kubectl Cannot Connect to Cluster
+
+```
+Error: couldn't get current server API group list: Get "http://localhost:8080/api?timeout=32s": dial tcp [::1]:8080: connect: connection refused
+```
+
+**Cause**: kubectl is not configured to use the Kind cluster context.
+
+**Solutions**:
+
+1. **Set the correct context**:
+   ```bash
+   make set-context
+   # or
+   kubectl config use-context kind-celine
+   ```
+
+2. **Verify cluster exists**:
+   ```bash
+   kind get clusters
+   # Should show: celine
+   ```
+
+3. **Check current context**:
+   ```bash
+   kubectl config current-context
+   # Should show: kind-celine
+   ```
+
+4. **List all contexts**:
+   ```bash
+   kubectl config get-contexts
+   ```
+
+5. **If cluster doesn't exist, create it**:
+   ```bash
+   make create-cluster
+   ```
 
 ### Nodes Not Ready
 

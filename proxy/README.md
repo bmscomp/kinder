@@ -32,7 +32,15 @@ This directory contains proxy configuration files for running Kind behind a corp
 
 2. **Find your Docker bridge IP**:
    ```bash
+   # On macOS
+   docker network inspect bridge | grep Gateway
+   
+   # On Linux
    ip addr show docker0 | grep "inet "
+   
+   # Alternative (works on both)
+   docker run --rm alpine ip route | grep default | awk '{print $3}'
+   
    # Usually: 172.17.0.1
    ```
 
@@ -193,7 +201,15 @@ If using CNTLM and images still won't pull:
 
 4. **Verify Docker bridge IP**:
    ```bash
+   # On macOS
+   docker network inspect bridge | grep Gateway
+   
+   # On Linux
    ip addr show docker0 | grep "inet "
+   
+   # Alternative (works on both)
+   docker run --rm alpine ip route | grep default | awk '{print $3}'
+   
    # Update proxy.env if IP is different from 172.17.0.1
    ```
 
