@@ -44,7 +44,23 @@ This creates `proxy/proxy.env` from the template.
 
 #### Step 2: Edit Proxy Settings
 
-**Option A: Direct Proxy (Basic/Digest Auth)**
+**Option A: Zscaler Proxy**
+
+For organizations using Zscaler:
+
+```bash
+# Find your Zscaler gateway
+scutil --proxy | grep HTTPProxy
+
+# Edit proxy.env with Zscaler settings
+HTTP_PROXY=http://gateway.zscaler.net:9400
+HTTPS_PROXY=http://gateway.zscaler.net:9400
+NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+> **📖 Zscaler Setup**: See [`proxy/ZSCALER_SETUP.md`](proxy/ZSCALER_SETUP.md) for complete Zscaler configuration including SSL inspection and certificates.
+
+**Option B: Generic Corporate Proxy**
 
 Edit `proxy/proxy.env` with your corporate proxy details:
 
@@ -58,19 +74,6 @@ NO_PROXY=localhost,127.0.0.1,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12
 PROXY_USER=your-username
 PROXY_PASS=your-password
 ```
-
-**Option B: CNTLM (NTLM Authentication)**
-
-For corporate proxies requiring NTLM authentication:
-
-```bash
-# Point to CNTLM running on Docker bridge
-HTTP_PROXY=http://172.17.0.1:3128
-HTTPS_PROXY=http://172.17.0.1:3128
-NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-```
-
-> **📖 CNTLM Setup**: See [`proxy/CNTLM_SETUP.md`](proxy/CNTLM_SETUP.md) for complete CNTLM installation and configuration guide.
 
 #### Step 3: Configure Docker Desktop (macOS)
 
@@ -168,9 +171,12 @@ make cleanup-test-proxy
 | Command | Description |
 |---------|-------------|
 | `make configure-proxy` | Create proxy configuration from template |
+| `make detect-zscaler` | Auto-detect Zscaler proxy settings (macOS only) |
 | `make show-proxy` | Show current proxy configuration |
 | `make configure-containerd-proxy` | Configure containerd proxy on all nodes |
 | `make check-containerd-proxy` | Check containerd proxy configuration on all nodes |
+| `make configure-dns` | Configure DNS from host machine to all nodes |
+| `make check-dns` | Check DNS configuration on all nodes |
 | `make restart-containerd` | Restart containerd service on all nodes |
 | `make load-image IMAGE=name:tag` | Load a Docker image into the cluster |
 | `make install-deps` | Install required dependencies |
@@ -331,6 +337,76 @@ make delete-dashboard
 - View logs and events
 - Execute commands in containers
 - Manage workloads
+
+## DNS Configuration
+
+The deployment script automatically copies DNS configuration from your host machine to all Kind nodes during cluster creation. This ensures that DNS resolution works correctly inside the cluster, especially important when using corporate DNS servers or Zscaler.
+
+### Automatic DNS Configuration
+
+During cluster creation (`make create-cluster`), the script:
+1. Detects DNS servers from your host machine (macOS or Linux)
+2. Copies them to `/etc/resolv.conf` on each Kind node
+3. Adds Kubernetes-specific search domains (`cluster.local`, `svc.cluster.local`)
+4. Configures DNS options for proper resolution
+
+### Manual DNS Configuration
+
+If you need to update DNS settings on an existing cluster:
+
+```bash
+# Configure DNS from host to all nodes
+make configure-dns
+
+# Check DNS configuration
+make check-dns
+```
+
+### DNS Configuration for Zscaler
+
+When using Zscaler proxy, DNS configuration is critical:
+- Zscaler may intercept DNS queries
+- Corporate DNS servers are required for internal domain resolution
+- The automatic DNS configuration ensures Kind nodes use the same DNS as your host
+
+### Verify DNS is Working
+
+```bash
+# Check DNS configuration on all nodes
+make check-dns
+
+# Test DNS resolution inside a pod
+kubectl run test-dns --image=busybox --rm -it --restart=Never -- nslookup kubernetes.default.svc.cluster.local
+
+# Test external DNS
+kubectl run test-dns --image=busybox --rm -it --restart=Never -- nslookup google.com
+```
+
+### Troubleshooting DNS
+
+If DNS resolution fails:
+
+1. **Check host DNS**:
+   ```bash
+   scutil --dns  # macOS
+   cat /etc/resolv.conf  # Linux
+   ```
+
+2. **Reconfigure DNS on nodes**:
+   ```bash
+   make configure-dns
+   ```
+
+3. **Verify DNS in nodes**:
+   ```bash
+   make check-dns
+   ```
+
+4. **Check CoreDNS pods**:
+   ```bash
+   kubectl get pods -n kube-system -l k8s-app=kube-dns
+   kubectl logs -n kube-system -l k8s-app=kube-dns
+   ```
 
 ## Proxy Configuration Details
 
@@ -643,10 +719,11 @@ kinder/
 │   ├── proxy.env.example             # Proxy configuration template
 │   ├── proxy.env                     # Your proxy settings (git-ignored)
 │   ├── README.md                     # Proxy documentation
-│   └── CNTLM_SETUP.md                # CNTLM setup guide for NTLM proxies
+│   └── ZSCALER_SETUP.md              # Zscaler proxy setup guide
 └── scripts/
     ├── deploy-kind-cluster.sh        # Main cluster deployment script
     ├── deploy-dashboard.sh           # Dashboard deployment script
+    ├── detect-zscaler.sh             # Auto-detect Zscaler proxy settings
     ├── setup-test-proxy.sh           # Setup local test proxy
     └── cleanup-test-proxy.sh         # Cleanup test proxy
 ```
@@ -656,10 +733,11 @@ kinder/
 - **`config/kind-cluster-config.yaml`**: Kind cluster configuration with 3 nodes
 - **`scripts/deploy-kind-cluster.sh`**: Main deployment script with enhanced proxy support
 - **`scripts/deploy-dashboard.sh`**: Kubernetes Dashboard deployment script
-- **`proxy/proxy.env.example`**: Template for proxy configuration (includes CNTLM example)
+- **`scripts/detect-zscaler.sh`**: Auto-detect Zscaler proxy settings on macOS
+- **`proxy/proxy.env.example`**: Template for proxy configuration (includes Zscaler examples)
 - **`proxy/proxy.env`**: Your actual proxy settings (created by `make configure-proxy`)
 - **`proxy/README.md`**: Detailed proxy configuration and troubleshooting guide
-- **`proxy/CNTLM_SETUP.md`**: Complete CNTLM setup guide for NTLM authentication proxies
+- **`proxy/ZSCALER_SETUP.md`**: Complete Zscaler proxy setup guide with SSL inspection and certificates
 - **`dashboard-token.txt`**: Dashboard access token (git-ignored, created by dashboard deployment)
 - **`Makefile`**: Convenient commands for cluster management
 - **`README.md`**: Main documentation

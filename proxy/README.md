@@ -4,7 +4,39 @@ This directory contains proxy configuration files for running Kind behind a corp
 
 ## Setup
 
-### Option 1: Direct Proxy (Basic/Digest Authentication)
+### Option 1: Zscaler Proxy
+
+**For organizations using Zscaler**, see the complete setup guide: [`ZSCALER_SETUP.md`](ZSCALER_SETUP.md)
+
+**Quick Start:**
+
+1. Find your Zscaler gateway:
+   ```bash
+   scutil --proxy | grep HTTPProxy
+   # Common: gateway.zscaler.net:9400
+   ```
+
+2. Configure proxy settings:
+   ```bash
+   cp proxy/proxy.env.example proxy/proxy.env
+   vi proxy/proxy.env
+   ```
+
+3. Set Zscaler proxy:
+   ```bash
+   HTTP_PROXY=http://gateway.zscaler.net:9400
+   HTTPS_PROXY=http://gateway.zscaler.net:9400
+   NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+   ```
+
+4. Create cluster:
+   ```bash
+   make create-cluster
+   ```
+
+> **📖 Full Zscaler Guide**: See [`ZSCALER_SETUP.md`](ZSCALER_SETUP.md) for SSL inspection, certificates, and troubleshooting.
+
+### Option 2: Generic Corporate Proxy
 
 1. Copy the example configuration:
    ```bash
@@ -24,55 +56,10 @@ This directory contains proxy configuration files for running Kind behind a corp
    PROXY_PASS=your-password
    ```
 
-### Option 2: CNTLM Gateway Mode (NTLM Authentication)
-
-**For corporate proxies requiring NTLM authentication**, use CNTLM:
-
-1. **Install and configure CNTLM** (see [`CNTLM_SETUP.md`](CNTLM_SETUP.md) for detailed guide)
-
-2. **Find your Docker bridge IP**:
-   ```bash
-   # On macOS
-   docker network inspect bridge | grep Gateway
-   
-   # On Linux
-   ip addr show docker0 | grep "inet "
-   
-   # Alternative (works on both)
-   docker run --rm alpine ip route | grep default | awk '{print $3}'
-   
-   # Usually: 172.17.0.1
-   ```
-
-3. **Configure proxy.env** to point to CNTLM:
-   ```bash
-   cp proxy/proxy.env.example proxy/proxy.env
-   vi proxy/proxy.env
-   ```
-
-   Set these values:
-   ```bash
-   HTTP_PROXY=http://172.17.0.1:3128
-   HTTPS_PROXY=http://172.17.0.1:3128
-   NO_PROXY=localhost,127.0.0.1,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-   ```
-
-4. **Export environment variables**:
-   ```bash
-   export HTTP_PROXY=http://172.17.0.1:3128
-   export HTTPS_PROXY=$HTTP_PROXY
-   export NO_PROXY="localhost,127.0.0.*,172.17.*,.local,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-   export http_proxy=$HTTP_PROXY
-   export https_proxy=$HTTPS_PROXY
-   export no_proxy=$NO_PROXY
-   ```
-
-5. **Create cluster**:
+4. Create the cluster:
    ```bash
    make create-cluster
    ```
-
-> **📖 Full CNTLM Guide**: See [`CNTLM_SETUP.md`](CNTLM_SETUP.md) for complete setup instructions
 
 ## What Gets Configured
 
@@ -174,68 +161,6 @@ If you encounter SSL certificate issues:
 - You may need to add your corporate CA certificate
 - Contact your IT department for the CA certificate
 
-### CNTLM Issues
-
-If using CNTLM and images still won't pull:
-
-1. **Verify CNTLM is running**:
-   ```bash
-   # macOS
-   brew services list | grep cntlm
-   
-   # Linux
-   sudo systemctl status cntlm
-   ```
-
-2. **Check CNTLM is listening**:
-   ```bash
-   netstat -an | grep 3128
-   # Should show: tcp4  0  0  *.3128  *.*  LISTEN
-   ```
-
-3. **Test connectivity from container**:
-   ```bash
-   docker run --rm alpine ping -c 2 172.17.0.1
-   docker run --rm -e http_proxy=http://172.17.0.1:3128 alpine wget -O- http://www.google.com
-   ```
-
-4. **Verify Docker bridge IP**:
-   ```bash
-   # On macOS
-   docker network inspect bridge | grep Gateway
-   
-   # On Linux
-   ip addr show docker0 | grep "inet "
-   
-   # Alternative (works on both)
-   docker run --rm alpine ip route | grep default | awk '{print $3}'
-   
-   # Update proxy.env if IP is different from 172.17.0.1
-   ```
-
-5. **Check CNTLM logs**:
-   ```bash
-   # macOS
-   tail -f /usr/local/var/log/cntlm.log
-   
-   # Linux
-   sudo journalctl -u cntlm -f
-   ```
-
-6. **Ensure Gateway mode is enabled** in `/etc/cntlm.conf`:
-   ```ini
-   Gateway    yes
-   Listen     3128
-   ```
-
-7. **Verify NO_PROXY includes Docker bridge**:
-   ```bash
-   # Must include 172.17.* to avoid proxy loops
-   NO_PROXY=localhost,127.0.0.*,172.17.*,...
-   ```
-
-For detailed CNTLM troubleshooting, see [`CNTLM_SETUP.md`](CNTLM_SETUP.md).
-
 ## Security Notes
 
 - **Never commit `proxy/proxy.env` to version control** (it's in .gitignore)
@@ -245,7 +170,7 @@ For detailed CNTLM troubleshooting, see [`CNTLM_SETUP.md`](CNTLM_SETUP.md).
 
 ## Files
 
-- `proxy.env.example` - Template configuration file (includes CNTLM example)
+- `proxy.env.example` - Template configuration file (includes Zscaler examples)
 - `proxy.env` - Your actual configuration (git-ignored)
 - `README.md` - This documentation
-- `CNTLM_SETUP.md` - Complete CNTLM setup guide for NTLM proxies
+- `ZSCALER_SETUP.md` - Complete Zscaler proxy setup guide
