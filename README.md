@@ -175,6 +175,7 @@ make cleanup-test-proxy
 | `make show-proxy` | Show current proxy configuration |
 | `make configure-containerd-proxy` | Configure containerd proxy on all nodes |
 | `make check-containerd-proxy` | Check containerd proxy configuration on all nodes |
+| `make install-utilities` | Install utilities (nslookup, vim, ping, cat, curl, wget) on all nodes |
 | `make configure-dns` | Configure DNS from host machine to all nodes |
 | `make check-dns` | Check DNS configuration on all nodes |
 | `make restart-containerd` | Restart containerd service on all nodes |
@@ -407,6 +408,76 @@ If DNS resolution fails:
    kubectl get pods -n kube-system -l k8s-app=kube-dns
    kubectl logs -n kube-system -l k8s-app=kube-dns
    ```
+
+## Node Utilities
+
+The deployment script automatically installs useful debugging and troubleshooting utilities on all Kind nodes during cluster creation.
+
+### Installed Utilities
+
+The following tools are automatically installed on all nodes (control-plane and workers):
+
+- **`nslookup`** - DNS lookup utility for testing name resolution
+- **`dig`** - Advanced DNS query tool
+- **`vim`** - Text editor for editing files inside nodes
+- **`ping`** - Network connectivity testing
+- **`cat`** - File viewing (usually pre-installed)
+- **`curl`** - HTTP client for testing connectivity
+- **`wget`** - File download utility
+- **`netstat`** - Network statistics and connections
+
+### Using Utilities
+
+**Shell into a node:**
+```bash
+# Control plane (paris)
+make shell-paris
+
+# Worker nodes
+make shell-berlin
+make shell-london
+```
+
+**Test DNS resolution:**
+```bash
+# Inside a node
+nslookup kubernetes.default.svc.cluster.local
+nslookup google.com
+dig @10.96.0.10 kubernetes.default.svc.cluster.local
+```
+
+**Test network connectivity:**
+```bash
+# Inside a node
+ping -c 3 8.8.8.8
+ping -c 3 google.com
+curl -I https://google.com
+```
+
+**Edit files:**
+```bash
+# Inside a node
+vim /etc/resolv.conf
+vim /etc/environment
+```
+
+**Check network configuration:**
+```bash
+# Inside a node
+netstat -tulpn
+cat /etc/resolv.conf
+cat /etc/hosts
+```
+
+### Manual Installation
+
+If you need to install utilities on an existing cluster:
+
+```bash
+make install-utilities
+```
+
+This will install all utilities on all nodes (control-plane and workers).
 
 ## Proxy Configuration Details
 

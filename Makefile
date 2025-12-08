@@ -1,4 +1,4 @@
-.PHONY: help create-cluster delete-cluster status get-nodes get-pods shell-paris shell-berlin shell-london configure-proxy detect-zscaler clean configure-containerd-proxy check-containerd-proxy configure-dns check-dns restart-containerd deploy-dashboard delete-dashboard dashboard-proxy dashboard-token dashboard-url test-proxy test-proxy-auth cleanup-test-proxy set-context
+.PHONY: help create-cluster delete-cluster status get-nodes get-pods shell-paris shell-berlin shell-london configure-proxy detect-zscaler clean configure-containerd-proxy check-containerd-proxy install-utilities configure-dns check-dns restart-containerd deploy-dashboard delete-dashboard dashboard-proxy dashboard-token dashboard-url test-proxy test-proxy-auth cleanup-test-proxy set-context
 
 # Default cluster name
 CLUSTER_NAME := celine
@@ -155,6 +155,17 @@ check-containerd-proxy: ## Check containerd proxy configuration on all nodes
 		echo "---"; \
 		echo ""; \
 	done
+
+install-utilities: ## Install useful utilities (nslookup, vim, ping, cat) on all nodes
+	@echo "$(GREEN)Installing utilities on all nodes...$(NC)"
+	@for NODE in $(CLUSTER_NAME)-control-plane $(CLUSTER_NAME)-worker $(CLUSTER_NAME)-worker2; do \
+		echo "$(GREEN)Installing utilities on $$NODE...$(NC)"; \
+		docker exec $$NODE bash -c "apt-get update -qq 2>/dev/null" || true; \
+		docker exec $$NODE bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsutils vim iputils-ping coreutils curl wget net-tools 2>/dev/null" || true; \
+		echo "$(GREEN)✓ Utilities installed on $$NODE$(NC)"; \
+	done
+	@echo "$(GREEN)Utility installation completed$(NC)"
+	@echo "$(YELLOW)Available tools: nslookup, dig, vim, ping, cat, curl, wget, netstat$(NC)"
 
 configure-dns: ## Configure DNS from host machine to all nodes
 	@echo "$(GREEN)Configuring DNS from host machine to all nodes...$(NC)"

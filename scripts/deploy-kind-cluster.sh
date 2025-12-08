@@ -214,6 +214,33 @@ EOF"
     print_info "DNS configuration completed ✓"
 }
 
+# Install useful utilities on all nodes
+install_utilities() {
+    print_info "Installing utilities on all nodes..."
+    
+    # Get all node names
+    NODES=$(kind get nodes --name "$CLUSTER_NAME")
+    
+    for NODE in $NODES; do
+        print_info "Installing utilities on $NODE..."
+        
+        # Update package lists
+        docker exec "$NODE" bash -c "apt-get update -qq 2>/dev/null" || true
+        
+        # Install utilities
+        # - dnsutils: provides nslookup, dig, host
+        # - vim: text editor
+        # - iputils-ping: provides ping
+        # - coreutils: provides cat (usually already installed)
+        docker exec "$NODE" bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsutils vim iputils-ping coreutils 2>/dev/null" || true
+        
+        print_info "Utilities installed on $NODE ✓"
+    done
+    
+    print_info "Utility installation completed ✓"
+    print_info "Available tools: nslookup, dig, vim, ping, cat"
+}
+
 # Configure nodes with resource limits and proxy
 configure_nodes() {
     print_info "Configuring cluster nodes..."
@@ -318,6 +345,7 @@ main() {
     configure_docker_proxy
     create_cluster
     configure_dns
+    install_utilities
     configure_nodes
     label_nodes
     verify_cluster
@@ -328,10 +356,16 @@ main() {
     print_info "Cluster name: $CLUSTER_NAME"
     print_info "Nodes: paris (control-plane), berlin (worker), london (worker)"
     print_info "Resources per node: ${NODE_CPUS} CPUs, ${NODE_MEMORY} memory"
+    print_info "Installed utilities: nslookup, dig, vim, ping, cat"
     echo ""
     print_info "To interact with your cluster:"
     echo "  kubectl get nodes"
     echo "  kubectl get pods -A"
+    echo ""
+    print_info "Shell into nodes:"
+    echo "  make shell-paris   # Control plane"
+    echo "  make shell-berlin  # Worker 1"
+    echo "  make shell-london  # Worker 2"
     echo ""
     print_info "To delete the cluster:"
     echo "  make delete-cluster"
