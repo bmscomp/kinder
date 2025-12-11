@@ -1,0 +1,51 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+nodes:
+  - role: control-plane
+    extraMounts:
+      # Certificat Zscaler monté dans le node
+      - hostPath: /Users/TON_USER/certs/zscaler.pem
+        containerPath: /etc/ssl/certs/zscaler.pem
+
+      # Script d’installation des outils de debug (curl, dig, ping…)
+      - hostPath: /Users/TON_USER/certs/node-setup.sh
+        containerPath: /opt/node-setup.sh
+
+    extraCommands:
+      - bash /opt/node-setup.sh
+
+  - role: worker
+    extraMounts:
+      - hostPath: /Users/TON_USER/certs/zscaler.pem
+        containerPath: /etc/ssl/certs/zscaler.pem
+
+      - hostPath: /Users/TON_USER/certs/node-setup.sh
+        containerPath: /opt/node-setup.sh
+
+    extraCommands:
+      - bash /opt/node-setup.sh
+
+# Patch containerd pour utiliser le proxy Zscaler et le certificat CA
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."docker.io".tls]
+    ca_file = "/etc/ssl/certs/zscaler.pem"
+
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."registry.k8s.io".tls]
+    ca_file = "/etc/ssl/certs/zscaler.pem"
+
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."gcr.io".tls]
+    ca_file = "/etc/ssl/certs/zscaler.pem"
+
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."quay.io".tls]
+    ca_file = "/etc/ssl/certs/zscaler.pem"
+
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."docker.io".http]
+    # Proxy Zscaler exposé sur macOS -> host.docker.internal dans les containers
+    http_proxy  = "http://host.docker.internal:9000"
+    https_proxy = "http://host.docker.internal:9000"
+    no_proxy    = "127.0.0.1,localhost,host.docker.internal,kind,.local,10.0.0.0/8"
+
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+    endpoint = ["https://registry-1.docker.io"]
