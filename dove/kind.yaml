@@ -4,55 +4,41 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
     extraMounts:
-      # Certificat Zscaler monté dans le node
+      - hostPath: /Users/TON_USER/certs/containerd-env.conf
+        containerPath: /etc/systemd/system/containerd.service.d/proxy.conf
       - hostPath: /Users/TON_USER/certs/zscaler.pem
         containerPath: /etc/ssl/certs/zscaler.pem
-
-      # Script d’installation des outils de debug (curl, dig, ping…)
       - hostPath: /Users/TON_USER/certs/node-setup.sh
         containerPath: /opt/node-setup.sh
-
     kubeadmConfigPatches:
       - |
         kind: InitConfiguration
         nodeRegistration:
           kubeletExtraArgs:
-            node-labels: ""
-    kubeadmConfigPatchesJSON6902:
-      - group: kubeadm.k8s.io
-        version: v1beta3
-        kind: InitConfiguration
-        patch: |
-          - op: add
-            path: /nodeRegistration/preKubeadmCommands
-            value:
-              - bash /opt/node-setup.sh
+            node-labels: "ingress-ready=true"
+      - |
+        kind: ClusterConfiguration
+        preKubeadmCommands:
+          - bash /opt/node-setup.sh
+          - systemctl daemon-reload
+          - systemctl restart containerd
 
   - role: worker
     extraMounts:
+      - hostPath: /Users/TON_USER/certs/containerd-env.conf
+        containerPath: /etc/systemd/system/containerd.service.d/proxy.conf
       - hostPath: /Users/TON_USER/certs/zscaler.pem
         containerPath: /etc/ssl/certs/zscaler.pem
-
       - hostPath: /Users/TON_USER/certs/node-setup.sh
         containerPath: /opt/node-setup.sh
-
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: ""
-    kubeadmConfigPatchesJSON6902:
-      - group: kubeadm.k8s.io
-        version: v1beta3
-        kind: JoinConfiguration
-        patch: |
-          - op: add
-            path: /nodeRegistration/preKubeadmCommands
-            value:
-              - bash /opt/node-setup.sh
+        preKubeadmCommands:
+          - bash /opt/node-setup.sh
+          - systemctl daemon-reload
+          - systemctl restart containerd
 
-# Patch containerd pour utiliser le proxy Zscaler et le certificat CA
 containerdConfigPatches:
 - |-
   [plugins."io.containerd.grpc.v1.cri".registry.configs."docker.io".tls]
@@ -68,10 +54,10 @@ containerdConfigPatches:
     ca_file = "/etc/ssl/certs/zscaler.pem"
 
   [plugins."io.containerd.grpc.v1.cri".registry.configs."docker.io".http]
-    # Proxy Zscaler exposé sur macOS -> host.docker.internal dans les containers
     http_proxy  = "http://host.docker.internal:9000"
     https_proxy = "http://host.docker.internal:9000"
     no_proxy    = "127.0.0.1,localhost,host.docker.internal,kind,.local,10.0.0.0/8"
 
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
     endpoint = ["https://registry-1.docker.io"]
+

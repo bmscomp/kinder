@@ -3,6 +3,13 @@ apiVersion: kind.x-k8s.io/v1alpha4
 
 nodes:
   - role: control-plane
+    extraMounts:
+      - hostPath: /Users/TON_USER/certs/containerd-env.conf
+        containerPath: /etc/systemd/system/containerd.service.d/proxy.conf
+      - hostPath: /Users/TON_USER/certs/zscaler.pem
+        containerPath: /etc/ssl/certs/zscaler.pem
+      - hostPath: /Users/TON_USER/certs/node-setup.sh
+        containerPath: /opt/node-setup.sh
     kubeadmConfigPatches:
       - |
         kind: InitConfiguration
@@ -13,23 +20,24 @@ nodes:
         kind: ClusterConfiguration
         preKubeadmCommands:
           - bash /opt/node-setup.sh
+          - systemctl daemon-reload
+          - systemctl restart containerd
+
+  - role: worker
     extraMounts:
+      - hostPath: /Users/TON_USER/certs/containerd-env.conf
+        containerPath: /etc/systemd/system/containerd.service.d/proxy.conf
       - hostPath: /Users/TON_USER/certs/zscaler.pem
         containerPath: /etc/ssl/certs/zscaler.pem
       - hostPath: /Users/TON_USER/certs/node-setup.sh
         containerPath: /opt/node-setup.sh
-
-  - role: worker
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
         preKubeadmCommands:
           - bash /opt/node-setup.sh
-    extraMounts:
-      - hostPath: /Users/TON_USER/certs/zscaler.pem
-        containerPath: /etc/ssl/certs/zscaler.pem
-      - hostPath: /Users/TON_USER/certs/node-setup.sh
-        containerPath: /opt/node-setup.sh
+          - systemctl daemon-reload
+          - systemctl restart containerd
 
 containerdConfigPatches:
 - |-
